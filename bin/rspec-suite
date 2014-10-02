@@ -1,0 +1,99 @@
+#!/usr/bin/env ruby
+require 'rspec'
+require 'rspec/core'
+
+module RSpec
+  module Suite
+    def self.suite_dir
+      File.expand_path(RSpec.configuration.default_suite_path, RSpec.configuration.default_path)
+    end
+
+    def self.reload_configuration
+      ::RSpec.reset
+      
+      ::RSpec.configure do |config|
+        config.add_setting :default_suite_path, :default => 'suites'
+      end
+    end
+    
+    class Runner
+      def self.run_specs(suite_name)
+        self.new.run_specs(suite_name)
+      end
+
+      def self.list_suites
+        self.new.list_suites
+      end
+
+      def list_suites
+        Dir.glob(File.join(Suite.suite_dir, "*") ).map { |path|
+          File.basename(path)
+        }
+      end
+
+      def suite_path(suite_name)
+        File.expand_path(suite_name, Suite.suite_dir)
+      end
+      
+      def load_suite_file(suite_name)
+        if File.exists?(suite_path(suite_name))
+          Kernel.load(suite_path(suite_name))
+        else
+          raise "suite file does not exist: #{suite_path(suite_name)}"
+        end
+      end
+
+      def run_specs(suite_name, opts={})
+        opts = {out: $stdout, err: $stderr}.merge(opts)
+        
+        Suite.reload_configuration
+        
+        confopts = ::RSpec::Core::ConfigurationOptions.new(['spec'])
+        runner = ::RSpec::Core::Runner.new(confopts)
+        setup_configuration
+        runner.setup(opts[:err], opts[:out])
+
+        load_suite_file(suite_name)
+        
+        target_example_groups = ::RSpec.world.example_groups
+        # merge @extra_metadata_hash to loaded specs/example groups
+        p target_example_groups
+        runner.run_specs(target_example_groups)
+      end
+
+
+      def setup_configuration
+      end
+    end
+  end
+end
+
+require 'optparse'
+
+common_parser = OptionParser.new do |parser|
+  parser.banner = "Usage: rspec-suite [options] <subcommand>\n\n"
+
+  parser.on_tail('-h', '--help', "You're looking at it.") do
+    puts parser.to_s
+    exit
+  end
+end
+
+common_parser.parse!
+subcommand = ARGV.shift
+
+RSpec::Suite.reload_configuration
+
+case subcommand
+when nil
+  STDERR.puts "ERROR: subcommand does not exist."
+  exit 1
+when 'list'
+  puts RSpec::Suite::Runner.list_suites.join("\n")
+when 'run'
+  suite_name = ARGV.shift
+  RSpec::Suite::Runner.run_specs(suite_name)
+when String
+  suite_name = subcommand
+  RSpec::Suite::Runner.run_specs(suite_name)
+end
